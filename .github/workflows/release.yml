@@ -85,12 +85,17 @@ jobs:
       - name: Stage driver bundle for cargo test gate
         # The Tauri build script reads `resources/Klaar.driver/**/*` from
         # tauri.conf.json and fails the cargo build (and therefore
-        # `cargo test --workspace`) if the bundle isn't staged. The release
-        # build step further down rebuilds + re-stages a universal bundle;
-        # this is just a scratch host-arch build to unblock the test gate.
+        # `cargo test --workspace`) if the bundle isn't staged.
+        #
+        # `cargo build --release` alone only produces `libKlaar.dylib`; the
+        # `.driver` bundle skeleton is assembled by `scripts/build-driver.sh`
+        # (which copies Info.plist into Contents/, codesigns ad-hoc, and
+        # runs verify-bundle.sh). Without KLAAR_DRIVER_UNIVERSAL it only
+        # builds the host arch — fast, and unblocks the gate. The real
+        # release build below re-runs it with KLAAR_DRIVER_UNIVERSAL=1.
         run: |
           set -euo pipefail
-          (cd driver && cargo build --release)
+          bash scripts/build-driver.sh
           bash scripts/stage-driver.sh
 
       - name: Gate — cargo test --workspace
