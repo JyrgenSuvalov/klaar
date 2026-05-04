@@ -16,7 +16,7 @@ This directory contains the release automation for Klaar.
      `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`. The driver
      crate (`driver/Cargo.toml`, `driver/Info.plist`,
      `MIN_DRIVER_VERSION`) is intentionally not touched — see
-     `RELEASING.md` for the manual driver-ABI-bump procedure.
+     `docs/releasing.md` for the manual driver-ABI-bump procedure.
   4. Refreshes `src-tauri/Cargo.lock`.
   5. Commits to `main` as `release: v<version>`.
   6. Creates and pushes annotated tag `v<version>`.
