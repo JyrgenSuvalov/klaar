@@ -73,4 +73,4 @@ For long-running soak tests (memory stability, xruns, CPU profiling) see
 
 ## License
 
-TBD.
+MIT
