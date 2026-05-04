@@ -38,10 +38,14 @@ describe("MuteButton", () => {
     const btn = screen.getByRole("button", { name: "Mute microphone" });
     expect(btn.getAttribute("aria-pressed")).toBe("false");
     expect(btn.getAttribute("data-muted")).toBe("false");
-    // The visible label glyph string mirrors the action ("Mute") while
-    // unmuted; the aria-label carries the longer accessible copy.
+    // The visible label reads "Mute" while unmuted (the aria-label
+    // carries the longer accessible copy). Note: the button also contains
+    // a visually-hidden "Muted" span as a width-stabilizer (see the
+    // `aria-hidden` grid in MuteButton.tsx), so `textContent` always
+    // includes "Muted" regardless of state — assert via `aria-pressed`
+    // / `data-muted` / the accessible name instead. The unmuted state is
+    // already covered by `getByRole({ name: "Mute microphone" })` above.
     expect(btn.textContent).toContain("Mute");
-    expect(btn.textContent).not.toContain("Muted");
     // Accelerator hint is part of the button text so it's discoverable.
     expect(btn.textContent).toContain("⌃⇧M");
   });
