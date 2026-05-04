@@ -82,6 +82,17 @@ jobs:
       - name: Gate — pnpm test
         run: pnpm test
 
+      - name: Stage driver bundle for cargo test gate
+        # The Tauri build script reads `resources/Klaar.driver/**/*` from
+        # tauri.conf.json and fails the cargo build (and therefore
+        # `cargo test --workspace`) if the bundle isn't staged. The release
+        # build step further down rebuilds + re-stages a universal bundle;
+        # this is just a scratch host-arch build to unblock the test gate.
+        run: |
+          set -euo pipefail
+          (cd driver && cargo build --release)
+          bash scripts/stage-driver.sh
+
       - name: Gate — cargo test --workspace
         run: |
           set -euo pipefail
