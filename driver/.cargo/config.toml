@@ -1,0 +1,10 @@
+[target.aarch64-apple-darwin]
+# Use linker wrapper to produce MH_BUNDLE instead of MH_DYLIB.
+# CoreAudio HAL plugins must be MH_BUNDLE; Rust's cdylib emits MH_DYLIB.
+linker = "./linker-bundle.sh"
+
+[target.x86_64-apple-darwin]
+# Same wrapper for the Intel slice of the Universal Binary. Without this,
+# cross-arch builds emit MH_DYLIB → lipo fuses mismatched slice types →
+# codesign rejects the fat binary with "object file format unrecognized".
+linker = "./linker-bundle.sh"

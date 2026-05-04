@@ -1,0 +1,359 @@
+@import "tailwindcss";
+
+/* ── Inter Tight (variable, subsetted) ────────────────────────────────────
+   Subset covers Basic Latin + Latin-1 Supplement + common punctuation and
+   symbols (≈53 KB WOFF2, down from 567 KB). Single variable face exposes
+   weights 100–900 via the `wght` axis. Regenerate with:
+     python3 -m fontTools.subset <source>.ttf --flavor=woff2 \
+       --unicodes="U+0000-007F,U+00A0-00FF,U+2000-206F,…" \
+       --layout-features='*' --no-hinting --desubroutinize */
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/InterTight-VariableFont.subset.woff2") format("woff2-variations");
+}
+
+/* ── WCAG 2.1 AA palette deltas ────────────────────────────────────────────
+   Tokens adjusted from the original palette to clear the AA contrast bar
+   against `--color-surface` (#141414) — see `src/__a11y__/contrast.test.tsx`
+   for the regression gate. Deltas:
+     • --color-text-secondary: #7a7a7a → #a8a8a8 (3.92:1 → 6.27:1, AA normal text)
+     • --color-border:         #2a2a2a → #636363 (1.30:1 → 3.04:1, AA non-text UI)
+   Sub-3:1 borders live on under `--color-border-subtle` and are decorative —
+   the hierarchy and panel separators users rely on use `--color-border`. */
+
+@theme {
+  /* ── Typography ───────────────────────────────────────────────────────
+     Tailwind v4 preflight applies `font-family: --default-font-family` to
+     <html>, which would otherwise win over our `:root` rule. Pointing the
+     token at our bundled face wires Inter Tight into the default stack and
+     into the `font-sans` utility (via `--font-sans`). */
+  --font-sans:
+    "Inter Tight", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --default-font-family: var(--font-sans);
+
+  /* ── Base colours ─────────────────────────────────────────────────── */
+
+  --teal-100: oklch(96% 0.07 169deg);
+  --teal-200: oklch(89% 0.2 169deg);
+  --teal-300: oklch(82% 0.22 169deg);
+  --teal-400: oklch(76% 0.21 169deg);
+  --teal-500: oklch(68% 0.18 169deg);
+  --teal-600: oklch(59% 0.16 169deg);
+  --teal-700: oklch(50% 0.14 169deg);
+  --teal-800: oklch(39% 0.11 169deg);
+  --teal-900: oklch(29% 0.08 169deg);
+  --color-background: #0a0a0a;
+  --color-surface: #141414;
+  --color-surface-elevated: #1c1c1c;
+  --color-surface-panel: #181818;
+  --color-border: #636363;
+  --color-border-subtle: #222222;
+  --color-text-primary: #f0f0f0;
+  --color-text-option: #d8d8d8;
+  --color-text-secondary: #a8a8a8;
+  --color-accent: var(--teal-200);
+  --color-accent-muted: var(--teal-400);
+  --color-logo: var(--teal-200);
+  --color-accent-hover: #2563eb;
+
+  /* ── Form control chrome ──────────────────────────────────────────────
+     Single source of truth for the look of header buttons, select
+     triggers, and any other "interactive surface" pill. Keeping it
+     transparent over the parent surface (rather than `--color-surface-
+     elevated`) matches the mute button and the EQ filter-type selects,
+     and avoids the "wide select looks lighter than narrow select"
+     inconsistency caused by elevation. Hover lifts to a translucent
+     white to give a clear affordance without committing to a new
+     opaque tone. */
+  --color-control-bg: transparent;
+  --color-control-bg-hover: rgb(255 255 255 / 0.04);
+  --color-control-border: var(--color-border);
+
+  /* ── Meter colours ────────────────────────────────────────────────── */
+  --color-meter-green: #22c55e;
+  --color-meter-yellow: #eab308;
+  --color-meter-red: #ef4444;
+  --color-meter-bg: #0c0c0c;
+
+  /* ── Gain reduction meter ─────────────────────────────────────────── */
+  --color-gr-fill: #f59e0b;
+  --color-gr-peak: #fbbf24;
+
+  /* ── Record / playback transport ──────────────────────────────────── */
+  --color-record-active: #ef4444;
+  --color-record-idle: #dc2626;
+  --color-record-disabled: #3f3f46;
+
+  /* ── Knob colours ─────────────────────────────────────────────────── */
+  --color-knob-track: #2e2e2e;
+  --color-knob-fill: var(--color-accent-muted);
+
+  /* ── EQ colours ───────────────────────────────────────────────────── */
+  --color-eq-bg: #0c0c0c;
+  /* Changing this custom property breaks stuff. */
+  --color-eq-curve: var(--teal-400);
+
+  /* ── Band handle colours (exported as CSS vars for EqBandControls) ── */
+  --color-band-1: #60a5fa;
+  --color-band-2: #34d399;
+  --color-band-3: #fbbf24;
+  --color-band-4: #f87171;
+  --color-band-5: #a78bfa;
+  --color-band-6: #fb923c;
+  --color-band-7: #38bdf8;
+  --color-band-8: #4ade80;
+}
+
+/* ── Content wrapper ──────────────────────────────────────────────────── */
+/* Constrains the inner content of the header, main, and footer to a
+   comfortable maximum width while letting backgrounds, borders, and
+   scrollbars span the full window. Tweak `--app-max-width` to retune. */
+.app-wrapper {
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--app-max-width, 1280px);
+}
+
+/* ── Select option text ───────────────────────────────────────────────── */
+.select-option {
+  color: var(--color-text-option);
+}
+.select-option:focus,
+.select-option[data-highlighted] {
+  color: white;
+}
+
+/* ── Effect panel layout ──────────────────────────────────────────────── */
+.effect-panel {
+  background-color: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-primary);
+}
+
+.panel-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* ── Bypass greying — single source of truth ───────────────────────── */
+/* Applied via .bypassed class on .effect-panel. Instant opacity change
+   (no transition) to avoid conflicts with meter-driven re-renders. */
+.effect-panel.bypassed > *:not(.panel-header) {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Master DSP bypass — dim the entire chain uniformly (but not the Record
+   panel, which lives outside .dsp-chain). All panels look identical
+   regardless of per-effect bypass state, so the chain reads as a single
+   inert group. Pointer events stay enabled so the user can pre-tweak
+   knobs and per-effect bypass toggles before re-engaging the chain. */
+.dsp-chain-bypassed > .effect-panel {
+  opacity: 0.55;
+}
+/* When master is bypassed, cancel the per-effect body dim so it doesn't
+   compound with the panel-level opacity above (0.55 × 0.4 → too dark).
+   Pointer-events: none from the per-effect rule still applies — the
+   controls of an individually-bypassed effect remain inert. */
+.dsp-chain-bypassed > .effect-panel.bypassed > *:not(.panel-header) {
+  opacity: 1;
+}
+
+.knobs-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex: 1;
+}
+
+.gr-meter-container {
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 2px;
+}
+
+/* ── EQ panel specific ────────────────────────────────────────────────── */
+.eq-panel {
+  gap: 8px;
+}
+
+.eq-curve-wrapper {
+  border-radius: 4px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.eq-bands-row {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.eq-band-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px;
+  border-radius: 4px;
+  background-color: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-subtle);
+}
+
+/* ── Knob hover & active ──────────────────────────────────────────────── */
+.knob-svg {
+  transition: filter 0.1s;
+}
+.knob-svg:hover {
+  filter: brightness(1.18);
+}
+.knob-svg:active {
+  filter: brightness(0.9);
+}
+
+/* ── Bypass toggle hover & active ────────────────────────────────────── */
+.bypass-toggle {
+  transition: filter 0.1s, opacity 0.1s;
+}
+.bypass-toggle:hover {
+  filter: brightness(1.15);
+}
+.bypass-toggle:active {
+  filter: brightness(0.85);
+}
+
+/* ── Band enable toggle hover ─────────────────────────────────────────── */
+.band-enable-toggle {
+  transition: transform 0.1s, filter 0.1s;
+}
+.band-enable-toggle:hover {
+  transform: scale(1.2);
+  filter: brightness(1.3);
+}
+
+/* ── EQ band controls hover ───────────────────────────────────────────── */
+.eq-band-controls {
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.eq-band-controls:hover {
+  background-color: #232323;
+  border-color: #333;
+}
+
+/* ── Scrollbar styling (main content area) ────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   High-contrast variant — follows the OS-level preference
+   `prefers-contrast: more`. No JS state, no settings UI, no persisted
+   toggle: the OS preference is the single source of truth. Overrides ONLY
+   the contrast-sensitive tokens — surface/background tokens are
+   intentionally unchanged so the visual identity is preserved.
+   ───────────────────────────────────────────────────────────────────── */
+@media (prefers-contrast: more) {
+  :root {
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #d0d0d0;
+    --color-text-option: #ffffff;
+    --color-border: #ffffff;
+    --color-border-subtle: #909090;
+    --color-accent: #00f0ff;
+    --color-accent-hover: #66f8ff;
+    /* Hardcoded transport reds in components are sourced from these
+       tokens; flip to the HC palette so the Record button reads as a
+       distinct alerting colour against pure white text/borders. */
+    --color-record-active: #ff4040;
+    --color-record-idle: #ff8080;
+    --color-record-disabled: #909090;
+  }
+
+  /* Replace opacity-only dimming on bypassed/disabled controls with a
+     full-opacity desaturated colour and a visible border. The dimmed-text
+     pattern fails AA under any palette; the border keeps the disabled
+     state distinguishable. */
+  .effect-panel.bypassed > *:not(.panel-header),
+  .dsp-chain-bypassed > .effect-panel {
+    opacity: 1;
+    filter: grayscale(0.6);
+  }
+  .effect-panel.bypassed {
+    border-style: dashed;
+    border-color: #909090;
+  }
+  .dsp-chain-bypassed > .effect-panel {
+    border-style: dashed;
+    border-color: #909090;
+  }
+
+  [disabled],
+  [aria-disabled="true"] {
+    opacity: 1 !important;
+    filter: grayscale(0.6);
+    outline: 1px dashed #909090;
+    outline-offset: 1px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Reduced-motion variant — follows `prefers-reduced-motion: reduce`.
+   Information-bearing animations (meter ballistics, spectrum, EQ curve)
+   are JS/RAF-driven, so this CSS-only override leaves them unaffected.
+   Targets: dialog open/close, focus-ring transitions, hover transitions,
+   indicator-dot glow pulses.
+   ───────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Tailwind's `animate-in` / `animate-out` utilities (used by Radix
+     Dialog via `data-[state=open]:animate-in`) set their own keyframe
+     animation names. The universal rule above clamps duration to ~0,
+     but explicit overrides make the intent legible and survive future
+     Tailwind updates. */
+  [data-state="open"],
+  [data-state="closed"] {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,64 @@
+[package]
+name = "klaar"
+version = "0.1.0"
+description = "Configurable virtual microphone with realtime DSP for macOS"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "klaar_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+coreaudio-rs = { version = "0.12", features = ["audio_unit"] }
+core-foundation = "0.10"
+log = "0.4"
+fern = "0.7"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-global-shortcut = "2"
+hound = "3"
+rustfft = "6"
+realfft = "3"
+plist = "1.6"
+thiserror = "2"
+tokio = { version = "1", features = ["time", "macros", "sync"] }
+
+# macOS-only: AVFoundation FFI for TCC microphone authorization.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSString",
+    "NSObject",
+] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "AVCaptureDevice",
+    "AVMediaFormat",
+] }
+block2 = "0.6"
+# `kern.boottime` via `sysctlbyname` for the reboot-detection guard
+# (IPC `get_boot_timestamp`).
+libc = "0.2"
+
+[dev-dependencies]
+approx = "0.5"
+proptest = "1"
+tempfile = "3"
+

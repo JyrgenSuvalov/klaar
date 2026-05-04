@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Required on macOS Tahoe (and later) because Tauri-bundled apps run with
+        the hardened runtime even under ad-hoc signing. Without these two keys
+        TCC silently rejects AVCaptureDevice.requestAccess(.audio) and the
+        x-apple.systempreferences:// deep-link, so the proactive mic-permission
+        gate cannot show a prompt or land the user on the Microphone pane.
+    -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

@@ -1,0 +1,14 @@
+#!/bin/bash
+# Preinstall: remove any prior Klaar driver bundle so we overwrite cleanly.
+# Failure here is non-fatal — postinstall will still write the new bundle.
+
+set -e
+
+DEST="/Library/Audio/Plug-Ins/HAL/Klaar.driver"
+
+if [ -d "$DEST" ]; then
+  echo "Removing previous Klaar driver at $DEST"
+  rm -rf "$DEST" || true
+fi
+
+exit 0

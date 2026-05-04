@@ -1,0 +1,15 @@
+<svg width="340" height="363" viewBox="0 0 340 363" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M70 231.25V131.25" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M270 231.25V131.25" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M45 200V162.5" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M295 200V162.5" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M95 260L95 102.708" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M245 260V102.708" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M120 293.75L120 68.75" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M220 293.75V68.75" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M170 356.25L170 6.24999" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M145 325L145 37.5" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<path d="M195 325L195 37.5" stroke="#04FFBE" stroke-width="10" stroke-linecap="round"/>
+<line x1="330" y1="4.37114e-07" x2="330" y2="362.5" stroke="#04FFBE" stroke-width="20"/>
+<line x1="10" y1="362.5" x2="10" y2="-4.37114e-07" stroke="#04FFBE" stroke-width="20"/>
+</svg>

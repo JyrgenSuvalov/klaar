@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the Klaar main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "opener:allow-open-url",
+    "clipboard-manager:allow-write-text",
+    "core:event:default",
+    "core:window:default",
+    "core:tray:default",
+    "window-state:default",
+    "global-shortcut:default"
+  ]
+}

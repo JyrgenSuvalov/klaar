@@ -1,0 +1,24 @@
+#!/bin/bash
+# Postinstall: set correct ownership/permissions on the installed driver and
+# restart coreaudiod so the new HAL plug-in is picked up.
+#
+# Uses SIGTERM (`killall coreaudiod`), NOT SIGKILL — see rationale in
+# src-tauri/src/commands/driver.rs::build_install_script.
+
+set -e
+
+DEST="/Library/Audio/Plug-Ins/HAL/Klaar.driver"
+
+if [ ! -d "$DEST" ]; then
+  echo "ERROR: $DEST missing after install"
+  exit 1
+fi
+
+chown -R root:wheel "$DEST"
+chmod -R 755 "$DEST"
+xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+
+# Graceful restart — launchd's KeepAlive will respawn coreaudiod.
+killall coreaudiod 2>/dev/null || true
+
+exit 0

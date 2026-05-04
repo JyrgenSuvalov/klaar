@@ -1,0 +1,28 @@
+[package]
+name = "klaar-driver"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "Klaar virtual audio driver (macOS AudioServerPlugin)"
+
+[lib]
+crate-type = ["cdylib"]
+name = "Klaar"
+
+[dependencies]
+coreaudio-sys = { version = "0.2", default-features = false, features = ["audio_server_plugin", "core_audio"] }
+core-foundation-sys = "0.8"
+core-foundation = "0.10"
+mach2 = "0.4"
+
+[features]
+# Enables `driver_log!` / `driver_log_property!` macros → synchronous writes
+# to /tmp/klaar-driver.log on every CoreAudio HAL callback. Useful for
+# debugging enumeration / property plumbing; *must not* be enabled in shipped
+# builds — the synchronous disk I/O inside property callbacks dramatically
+# slows coreaudiod's initial device rescan (see GitHub issue #21).
+#
+# Invoke via `cargo build --release --features dev-logging`, or via the
+# `KLAAR_DRIVER_DEV_LOGGING=1` env var recognised by
+# `scripts/build-driver.sh` and `driver/dev-install.sh`.
+dev-logging = []
