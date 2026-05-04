@@ -212,59 +212,10 @@ pub async fn collect_coreaudio_diagnostics() -> Result<String, String> {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// read_update_cache / write_update_cache
-// ────────────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct UpdateCheckCache {
-    /// Unix ms timestamp of the last GitHub release fetch attempt. `0` when
-    /// the cache has never been written.
-    #[serde(default, rename = "lastCheckedAt")]
-    pub last_checked_at: u64,
-    /// Most recent release tag observed, or `null` if the cache has never
-    /// been successfully populated.
-    #[serde(default, rename = "latestTag")]
-    pub latest_tag: Option<String>,
-    /// Release tags the user has explicitly dismissed from the update banner.
-    /// A new tag resets the banner.
-    #[serde(default, rename = "dismissedTags")]
-    pub dismissed_tags: Vec<String>,
-}
-
-fn update_cache_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let dir: PathBuf = app
-        .path()
-        .resolve("update-check.json", BaseDirectory::AppData)
-        .map_err(|e| format!("resolve app data dir failed: {e}"))?;
-    Ok(dir)
-}
-
-#[tauri::command]
-pub fn read_update_cache<R: Runtime>(app: AppHandle<R>) -> Result<Option<UpdateCheckCache>, String> {
-    let path = update_cache_path(&app)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = std::fs::read(&path).map_err(|e| format!("read update cache: {e}"))?;
-    let cache: UpdateCheckCache =
-        serde_json::from_slice(&bytes).map_err(|e| format!("parse update cache: {e}"))?;
-    Ok(Some(cache))
-}
-
-#[tauri::command]
-pub fn write_update_cache<R: Runtime>(
-    app: AppHandle<R>,
-    cache: UpdateCheckCache,
-) -> Result<(), String> {
-    let path = update_cache_path(&app)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir app data dir: {e}"))?;
-    }
-    let bytes = serde_json::to_vec_pretty(&cache).map_err(|e| format!("serialize cache: {e}"))?;
-    std::fs::write(&path, bytes).map_err(|e| format!("write update cache: {e}"))?;
-    Ok(())
-}
-
+// (read_update_cache / write_update_cache removed — the GitHub release
+//  update check is now Rust-owned via `update_check.rs`. The cache file
+//  `update-check.json` is read/written from there directly; the webview
+//  no longer participates. See the `app-update-check` capability spec.)
 // ────────────────────────────────────────────────────────────────────────────
 // read_onboarding_state / write_onboarding_state
 //
@@ -686,31 +637,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn update_cache_round_trips() {
-        let cache = UpdateCheckCache {
-            last_checked_at: 1_700_000_000_000,
-            latest_tag: Some("v1.2.3".to_string()),
-            dismissed_tags: vec!["v1.2.3".to_string()],
-        };
-        let json = serde_json::to_string(&cache).unwrap();
-        assert!(json.contains("\"lastCheckedAt\":1700000000000"));
-        assert!(json.contains("\"latestTag\":\"v1.2.3\""));
-        assert!(json.contains("\"dismissedTags\":[\"v1.2.3\"]"));
-
-        let parsed: UpdateCheckCache = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.last_checked_at, 1_700_000_000_000);
-        assert_eq!(parsed.latest_tag.as_deref(), Some("v1.2.3"));
-        assert_eq!(parsed.dismissed_tags, vec!["v1.2.3".to_string()]);
-    }
-
-    #[test]
-    fn update_cache_defaults_when_fields_missing() {
-        let parsed: UpdateCheckCache = serde_json::from_str("{}").unwrap();
-        assert_eq!(parsed.last_checked_at, 0);
-        assert!(parsed.latest_tag.is_none());
-        assert!(parsed.dismissed_tags.is_empty());
-    }
+    // (update_cache tests removed alongside read_update_cache /
+    //  write_update_cache — see `update_check.rs` for the new owner's tests.)
 
     // ────────────────────────────────────────────────────────────────────
     // report_frontend_error — frontend diagnostics

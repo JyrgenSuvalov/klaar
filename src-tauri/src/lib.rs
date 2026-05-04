@@ -13,6 +13,7 @@ pub mod profile_manager;
 mod recording_manager;
 pub mod settings_manager;
 mod tray;
+mod update_check;
 mod util;
 
 use std::sync::{Arc, Mutex};
@@ -26,9 +27,10 @@ use commands::mute::{get_hotkey_warning, get_mute_state, set_mute, toggle_mute};
 use commands::system::{
     collect_coreaudio_diagnostics, get_app_version, get_boot_timestamp,
     get_microphone_authorization_status, get_min_driver_version, open_privacy_microphone_settings,
-    read_onboarding_state, read_update_cache, report_frontend_error, request_reboot, restart_mac,
-    seed_reboot_pending_from_disk, set_reboot_pending, write_onboarding_state, write_update_cache,
+    read_onboarding_state, report_frontend_error, request_reboot, restart_mac,
+    seed_reboot_pending_from_disk, set_reboot_pending, write_onboarding_state,
 };
+use update_check::{check_for_app_update, get_update_status};
 use commands::{
     delete_profile, delete_recording, get_meters, get_processing_enabled, get_settings,
     get_spectrum, list_input_devices, list_output_devices, list_profiles, load_profile,
@@ -300,6 +302,18 @@ pub fn run() {
 
             init_tray(app.handle())?;
 
+            // Update-check pipeline (Rust-owned). When `update_check::ENABLED`
+            // is `false`, this only registers the managed handle so the IPC
+            // commands can return the canonical "disabled" error — no
+            // triggers, no network. When `true`, T1 (launch grace) and
+            // T3 (NSWorkspace wake) are wired up here and run for the
+            // remainder of the process lifetime.
+            update_check::register(app.handle());
+            // Initial tray rebuild from the seed state — picks up the
+            // ENABLED-gated layout (omits the "Check for Updates…" item
+            // when disabled).
+            tray::rebuild_for_update_status(app.handle(), &update_check::UpdateStatus::Idle);
+
             // ── Global mute hotkey (Ctrl+Shift+M) ───────────────────────
             // Registered AFTER the tray + engine handle are live so the
             // shortcut callback can resolve `EngineHandle` from app state
@@ -434,8 +448,8 @@ pub fn run() {
             // System / diagnostics / update cache
             restart_mac,
             collect_coreaudio_diagnostics,
-            read_update_cache,
-            write_update_cache,
+            check_for_app_update,
+            get_update_status,
             get_min_driver_version,
             get_app_version,
             // Reboot-required onboarding flow

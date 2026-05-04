@@ -55,6 +55,7 @@ use tauri::{
 
 use crate::commands::EngineHandle;
 use crate::engine_state::AudioEngineState;
+use crate::update_check::{self, ErrorKind, UpdateStatus};
 
 /// Newtype wrapper so we can store the tray's menu in app-managed state
 /// without colliding with any other consumer of `Menu<R>`.
@@ -81,6 +82,14 @@ const MENU_ID_SHOW_HIDE: &str = "show-hide";
 const MENU_ID_QUIT: &str = "quit";
 /// Menu item id for the global mute toggle.
 const MENU_ID_MUTE: &str = "mute";
+/// Menu item id for the dynamic update header (disabled informational item).
+const MENU_ID_UPDATE_HEADER: &str = "update-header";
+/// Menu item id for the "Check for Updates…" action (or its transient
+/// "Checking…" / "Up to date" / "Couldn't reach GitHub" variants).
+const MENU_ID_CHECK_FOR_UPDATES: &str = "check_for_updates";
+/// Menu item id for the contextual "Update available: vX.Y.Z →" item shown
+/// only when the state machine is `Available`.
+const MENU_ID_OPEN_RELEASE: &str = "open_release_url";
 
 /// Label of the About item. The trailing horizontal-ellipsis (`…`, U+2026,
 /// not three dots) follows macOS Human Interface Guidelines for menu items
@@ -117,6 +126,16 @@ pub enum MenuAction {
     ToggleMute,
     /// Quit the app cleanly via `app.exit(0)`.
     Quit,
+    /// Trigger the manual update check (forces a network call, bypasses the
+    /// 24h freshness cache). The Rust update-check pipeline drives the
+    /// resulting state transitions; the menu rebuild reflects them
+    /// reactively. No-op when [`update_check::ENABLED`] is `false` (Rust
+    /// returns the canonical disabled error).
+    CheckForUpdates,
+    /// Open the release URL associated with the current `Available` state.
+    /// Side effect; the URL is captured at click time from the live state
+    /// snapshot so a stale menu can't open the wrong release.
+    OpenReleaseUrl,
 }
 
 /// Pure resolver mapping a menu item id to its [`MenuAction`]. Unknown ids
@@ -129,6 +148,10 @@ pub fn menu_action_for(id: &str) -> Option<MenuAction> {
         MENU_ID_SHOW_HIDE => Some(MenuAction::ToggleWindow),
         MENU_ID_MUTE => Some(MenuAction::ToggleMute),
         MENU_ID_QUIT => Some(MenuAction::Quit),
+        MENU_ID_CHECK_FOR_UPDATES => Some(MenuAction::CheckForUpdates),
+        MENU_ID_OPEN_RELEASE => Some(MenuAction::OpenReleaseUrl),
+        // The header item is intentionally disabled and click-inert; ignore.
+        MENU_ID_UPDATE_HEADER => None,
         _ => None,
     }
 }
@@ -623,6 +646,48 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         MenuAction::Quit => {
             app.exit(0);
         }
+        MenuAction::CheckForUpdates => {
+            // Manual check: bypass the freshness cache (force=true). The
+            // Rust pipeline emits `Checking { manual: true }` immediately,
+            // which the tray rebuild reflects as the disabled "Checking…"
+            // label; the auto-revert after the terminal state unwinds the
+            // transient feedback.
+            if let Some(handle) = app.try_state::<update_check::UpdateCheckHandle>() {
+                let app_clone = app.clone();
+                let handle_inner = handle.inner();
+                // We need to call `check` on the live handle. State<T> derefs
+                // to &T, so we can spawn a clone-friendly call by going
+                // through the managed state lookup inside the task.
+                let _ = handle_inner; // silence unused-variable lint
+                tauri::async_runtime::spawn(async move {
+                    let h = app_clone.state::<update_check::UpdateCheckHandle>();
+                    h.check(&app_clone, true).await;
+                });
+            }
+        }
+        MenuAction::OpenReleaseUrl => {
+            // Read the current state and open its URL if `Available`.
+            // Going through the snapshot avoids embedding the URL in the
+            // menu item (which would go stale if the menu wasn't rebuilt
+            // immediately on a transition).
+            if let Some(handle) = app.try_state::<update_check::UpdateCheckHandle>() {
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let h = app_clone.state::<update_check::UpdateCheckHandle>();
+                    let snapshot = h.snapshot().await;
+                    if let UpdateStatus::Available { url, .. } = snapshot {
+                        // `tauri_plugin_opener::open_url` is the same helper
+                        // the banner uses for the in-window button — keep
+                        // both surfaces routed through one path.
+                        use tauri_plugin_opener::OpenerExt;
+                        if let Err(e) = app_clone.opener().open_url(&url, None::<&str>) {
+                            log::warn!("tray: open_url failed: {e}");
+                        }
+                    }
+                });
+                let _ = handle;
+            }
+        }
     }
 }
 
@@ -681,6 +746,190 @@ pub fn refresh_tray_mute_label<R: Runtime>(app: &AppHandle<R>) {
         let _ = item.set_text(label);
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Update-check menu surface (`app-update-check` capability).
+//
+// Replaces the entire tray menu on every `update_status` transition. We
+// rebuild rather than mutate individual items because (a) the set of
+// visible items varies per state (the contextual "Update available" sub-
+// item is conditionally present), and (b) the transitions are infrequent
+// enough that the cost is negligible. Mirrors the `set_menu` pattern from
+// `init_tray`; the new menu is also stashed via `TrayMenu` so
+// `refresh_tray_menu_labels` and `refresh_tray_mute_label` keep working.
+//
+// MUST be called on the main thread — Tauri tray operations require it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Rebuild the tray menu to reflect the current [`UpdateStatus`].
+///
+/// When [`update_check::ENABLED`] is `false`, the update-related items are
+/// omitted entirely (no "Check for Updates…", no contextual sub-item, no
+/// `— Update available` suffix on the header). The rest of the menu is
+/// unchanged from [`init_tray`].
+pub fn rebuild_for_update_status<R: Runtime>(app: &AppHandle<R>, status: &UpdateStatus) {
+    let Some(tray) = app.tray_by_id("main") else {
+        return;
+    };
+    let Some(handle) = app.try_state::<EngineHandle>() else {
+        return;
+    };
+    let muted = handle.dsp_params.is_muted();
+    let visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(true);
+    let last_manual = app
+        .try_state::<update_check::UpdateCheckHandle>()
+        .map(|h| h.last_manual_terminal())
+        .unwrap_or(false);
+    let version = app.package_info().version.to_string();
+
+    let new_menu = match build_menu_for_status(app, &version, status, last_manual, muted, visible) {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!("rebuild_for_update_status: menu build failed: {e}");
+            return;
+        }
+    };
+
+    if let Err(e) = tray.set_menu(Some(new_menu.clone())) {
+        log::warn!("rebuild_for_update_status: set_menu failed: {e}");
+        return;
+    }
+    // Stash the fresh menu so the existing label-refresh helpers keep finding
+    // the show-hide / mute items.
+    app.manage(TrayMenu(new_menu));
+}
+
+fn build_menu_for_status<R: Runtime>(
+    app: &AppHandle<R>,
+    version: &str,
+    status: &UpdateStatus,
+    last_manual_terminal: bool,
+    muted: bool,
+    visible: bool,
+) -> Result<Menu<R>, Box<dyn std::error::Error>> {
+    let header_label = header_label_for(version, status);
+    let header = MenuItem::with_id(
+        app,
+        MENU_ID_UPDATE_HEADER,
+        header_label,
+        false, // disabled (purely informational)
+        None::<&str>,
+    )?;
+
+    let about = MenuItem::with_id(app, MENU_ID_ABOUT, LABEL_ABOUT, true, None::<&str>)?;
+    let separator_after_header = PredefinedMenuItem::separator(app)?;
+    let separator_top = PredefinedMenuItem::separator(app)?;
+    let mute = MenuItem::with_id(app, MENU_ID_MUTE, mute_label(muted), true, None::<&str>)?;
+    let separator_mid = PredefinedMenuItem::separator(app)?;
+    let show_hide = MenuItem::with_id(
+        app,
+        MENU_ID_SHOW_HIDE,
+        show_hide_label(visible),
+        true,
+        None::<&str>,
+    )?;
+    let quit = MenuItem::with_id(app, MENU_ID_QUIT, LABEL_QUIT, true, None::<&str>)?;
+
+    // When the kill-switch is OFF, the menu has no update items at all —
+    // header is just `Klaar v<version>`, no Check item, no contextual item.
+    if !update_check::ENABLED {
+        return Ok(Menu::with_items(
+            app,
+            &[
+                &header,
+                &separator_after_header,
+                &about,
+                &separator_top,
+                &mute,
+                &separator_mid,
+                &show_hide,
+                &quit,
+            ],
+        )?);
+    }
+
+    let (check_label, check_enabled) = check_item_for(status, last_manual_terminal);
+    let check_item = MenuItem::with_id(
+        app,
+        MENU_ID_CHECK_FOR_UPDATES,
+        check_label,
+        check_enabled,
+        None::<&str>,
+    )?;
+
+    // Contextual "Update available: vX.Y.Z →" item — only present when
+    // state is `Available`. Click opens the release URL.
+    if let UpdateStatus::Available { tag, .. } = status {
+        let context_item = MenuItem::with_id(
+            app,
+            MENU_ID_OPEN_RELEASE,
+            format!("Update available: {} →", tag),
+            true,
+            None::<&str>,
+        )?;
+        Ok(Menu::with_items(
+            app,
+            &[
+                &header,
+                &context_item,
+                &check_item,
+                &separator_after_header,
+                &about,
+                &separator_top,
+                &mute,
+                &separator_mid,
+                &show_hide,
+                &quit,
+            ],
+        )?)
+    } else {
+        Ok(Menu::with_items(
+            app,
+            &[
+                &header,
+                &check_item,
+                &separator_after_header,
+                &about,
+                &separator_top,
+                &mute,
+                &separator_mid,
+                &show_hide,
+                &quit,
+            ],
+        )?)
+    }
+}
+
+/// Header label resolver. `Available` adds the "— Update available" suffix
+/// (only when the kill-switch is on); all other states show plain version.
+pub fn header_label_for(version: &str, status: &UpdateStatus) -> String {
+    if update_check::ENABLED && matches!(status, UpdateStatus::Available { .. }) {
+        return format!("Klaar v{} — Update available", version);
+    }
+    format!("Klaar v{}", version)
+}
+
+/// Resolver for the "Check for Updates…" item's label and enabled flag.
+/// Returns `("Checking…", false)` while a check is in flight, the transient
+/// "Up to date" / "Couldn't reach GitHub" disabled labels for manual
+/// terminals, and `("Check for Updates…", true)` otherwise.
+pub fn check_item_for(
+    status: &UpdateStatus,
+    last_manual_terminal: bool,
+) -> (&'static str, bool) {
+    match status {
+        UpdateStatus::Checking { .. } => ("Checking…", false),
+        UpdateStatus::UpToDate { .. } if last_manual_terminal => ("Up to date", false),
+        UpdateStatus::Error { .. } if last_manual_terminal => ("Couldn't reach GitHub", false),
+        _ => ("Check for Updates…", true),
+    }
+}
+
+// Suppress unused-import warning when ENABLED == false / non-mac builds.
+const _ENSURE_TYPES_USED: Option<ErrorKind> = None;
 
 /// Refresh the show/hide menu item to match the current window visibility.
 ///

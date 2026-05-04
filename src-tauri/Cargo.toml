@@ -1,6 +1,6 @@
 [package]
 name = "klaar"
-version = "0.2.0"
+version = "0.1.0"
 description = "Configurable virtual microphone with realtime DSP for macOS"
 edition = "2021"
 
@@ -37,6 +37,14 @@ realfft = "3"
 plist = "1.6"
 thiserror = "2"
 tokio = { version = "1", features = ["time", "macros", "sync"] }
+# HTTP client for the GitHub release update check (Rust-owned per the
+# `app-update-check` capability). `rustls-tls` keeps openssl off the
+# bundle; no `native-tls`. `json` enables `Response::json()`.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Strict semver comparison for `<current_version> vs <release_tag>`. Mirrors
+# the Rust `util/semver.rs` shape but adds prerelease/build-metadata
+# handling we need for hand-typed tags.
+semver = "1"
 
 # macOS-only: AVFoundation FFI for TCC microphone authorization.
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -56,9 +64,17 @@ block2 = "0.6"
 # `kern.boottime` via `sysctlbyname` for the reboot-detection guard
 # (IPC `get_boot_timestamp`).
 libc = "0.2"
+# `NSWorkspaceDidWakeNotification` observer for the app-update-check T3
+# trigger (system wake from sleep).
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSWorkspace",
+] }
 
 [dev-dependencies]
 approx = "0.5"
 proptest = "1"
 tempfile = "3"
+# HTTP mocking for `update_check.rs` state-machine tests.
+mockito = "1"
 
