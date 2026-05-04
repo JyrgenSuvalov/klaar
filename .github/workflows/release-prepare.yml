@@ -1,0 +1,176 @@
+name: release-prepare
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version (e.g. 0.2.0). No leading 'v'. Must be semver."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Validate version input
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version '$VERSION'. Expected semver like 0.2.0 or 0.2.0-rc.1 (no leading 'v')."
+            exit 1
+          fi
+          echo "Version OK: $VERSION"
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fail if tag already exists
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::Tag ${TAG} already exists locally."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists on origin."
+            exit 1
+          fi
+          echo "Tag ${TAG} is free."
+
+      - name: Bump package.json
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = "package.json";
+            const raw = fs.readFileSync(path, "utf8");
+            const trailingNewline = raw.endsWith("\n");
+            const pkg = JSON.parse(raw);
+            pkg.version = process.env.VERSION;
+            const out = JSON.stringify(pkg, null, 2) + (trailingNewline ? "\n" : "");
+            fs.writeFileSync(path, out);
+            console.log("package.json -> " + pkg.version);
+          '
+
+      - name: Bump src-tauri/tauri.conf.json
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = "src-tauri/tauri.conf.json";
+            const raw = fs.readFileSync(path, "utf8");
+            const trailingNewline = raw.endsWith("\n");
+            const conf = JSON.parse(raw);
+            conf.version = process.env.VERSION;
+            const out = JSON.stringify(conf, null, 2) + (trailingNewline ? "\n" : "");
+            fs.writeFileSync(path, out);
+            console.log("src-tauri/tauri.conf.json -> " + conf.version);
+          '
+
+      - name: Bump src-tauri/Cargo.toml
+        run: |
+          set -euo pipefail
+          awk -v ver="$VERSION" '
+            BEGIN { in_pkg = 0; bumped = 0 }
+            /^\[package\]/ { in_pkg = 1; print; next }
+            /^\[/ && !/^\[package\]/ { in_pkg = 0; print; next }
+            {
+              if (in_pkg && !bumped && $0 ~ /^version[[:space:]]*=/) {
+                print "version = \"" ver "\""
+                bumped = 1
+                next
+              }
+              print
+            }
+            END { if (!bumped) { print "ERROR: did not bump src-tauri/Cargo.toml" > "/dev/stderr"; exit 1 } }
+          ' src-tauri/Cargo.toml > src-tauri/Cargo.toml.new
+          mv src-tauri/Cargo.toml.new src-tauri/Cargo.toml
+          echo "src-tauri/Cargo.toml -> $VERSION"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Refresh src-tauri/Cargo.lock
+        run: |
+          set -euo pipefail
+          # Driver crate is intentionally not bumped here — its version is
+          # the CoreAudio bundle's ABI version and is bumped manually only
+          # when driver ABI changes (see src-tauri/src/constants.rs).
+          (cd src-tauri && (cargo update --workspace --offline || cargo update --workspace))
+
+      - name: Verify all three version sites
+        run: |
+          set -euo pipefail
+          fail=0
+          check() {
+            local label="$1" actual="$2"
+            if [[ "$actual" != "$VERSION" ]]; then
+              echo "::error::$label is '$actual', expected '$VERSION'."
+              fail=1
+            else
+              echo "OK: $label = $actual"
+            fi
+          }
+          check "package.json"            "$(node -p 'require("./package.json").version')"
+          check "src-tauri/tauri.conf.json" "$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+          extract_cargo_version() {
+            awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version[[:space:]]*=/{ if (match($0, /"[^"]*"/)) print substr($0, RSTART+1, RLENGTH-2); exit }' "$1"
+          }
+          check "src-tauri/Cargo.toml"    "$(extract_cargo_version src-tauri/Cargo.toml)"
+          if ! grep -q "name = \"klaar\"" src-tauri/Cargo.lock; then
+            echo "::warning::Could not locate klaar entry in src-tauri/Cargo.lock by pattern; relying on cargo update."
+          fi
+          if [[ $fail -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+          git status --porcelain
+          git commit -m "release: v${VERSION}"
+          git push origin main
+
+      - name: Create and push annotated tag
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          git tag -a "$TAG" -m "Release v${VERSION}"
+          git push origin "$TAG"
+
+      - name: Dispatch release.yml against the new tag
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          gh workflow run release.yml --ref "$TAG"
+
+      - name: Workflow summary
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          {
+            echo "## release-prepare summary"
+            echo ""
+            echo "- **Version:** \`${VERSION}\`"
+            echo "- **Tag:** [${TAG}](${REPO_URL}/releases/tag/${TAG})"
+            echo "- **Dispatched:** [release.yml runs](${REPO_URL}/actions/workflows/release.yml)"
+          } >> "$GITHUB_STEP_SUMMARY"

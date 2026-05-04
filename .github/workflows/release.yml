@@ -1,0 +1,148 @@
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build
+    runs-on: macos-14
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive VERSION from ref
+        run: |
+          set -euo pipefail
+          REF_NAME="${GITHUB_REF_NAME}"
+          if [[ ! "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Ref '$REF_NAME' is not a v<semver> tag. release.yml must run against a v* tag."
+            exit 1
+          fi
+          VERSION="${REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$REF_NAME" >> "$GITHUB_ENV"
+          echo "Building $REF_NAME (version $VERSION)"
+
+      - name: Verify package.json matches tag
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(node -p 'require("./package.json").version')"
+          if [[ "$PKG_VERSION" != "$VERSION" ]]; then
+            echo "::error::package.json version ($PKG_VERSION) does not match tag version ($VERSION)."
+            exit 1
+          fi
+          echo "Version match: $PKG_VERSION"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-14-universal-aarch64-x86_64
+          workspaces: |
+            src-tauri
+            driver
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Gate — pnpm typecheck
+        run: pnpm typecheck
+
+      - name: Gate — pnpm lint
+        run: pnpm lint
+
+      - name: Gate — pnpm test
+        run: pnpm test
+
+      - name: Gate — cargo test --workspace
+        run: |
+          set -euo pipefail
+          (cd src-tauri && cargo test --workspace)
+          (cd driver && cargo test --workspace)
+
+      - name: Build universal release
+        run: pnpm build:release:universal
+
+      - name: Locate DMG
+        run: |
+          set -euo pipefail
+          DMG_PATH="src-tauri/target/universal-apple-darwin/release/bundle/dmg/Klaar_${VERSION}_universal.dmg"
+          if [[ ! -f "$DMG_PATH" ]]; then
+            echo "::error::Expected DMG not found at $DMG_PATH"
+            ls -la src-tauri/target/universal-apple-darwin/release/bundle/dmg/ || true
+            exit 1
+          fi
+          echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
+          echo "DMG_NAME=$(basename "$DMG_PATH")" >> "$GITHUB_ENV"
+          echo "DMG_SIZE=$(stat -f %z "$DMG_PATH")" >> "$GITHUB_ENV"
+          echo "DMG_SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Create draft release if missing
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving notes untouched."
+          else
+            gh release create "$TAG" \
+              --draft \
+              --generate-notes \
+              --title "$TAG"
+            echo "Created draft release $TAG."
+          fi
+
+      - name: Upload DMG asset
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "$DMG_PATH" --clobber
+
+      - name: Upload DMG as workflow artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: klaar-${{ env.VERSION }}-universal-dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/Klaar_${{ env.VERSION }}_universal.dmg
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Workflow summary
+        run: |
+          set -euo pipefail
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          RELEASE_URL="$(gh release view "$TAG" --json url --jq .url 2>/dev/null || echo "${REPO_URL}/releases/tag/${TAG}")"
+          {
+            echo "## release summary"
+            echo ""
+            echo "- **Tag:** \`${TAG}\`"
+            echo "- **DMG:** \`${DMG_NAME}\`"
+            echo "- **Size:** ${DMG_SIZE} bytes"
+            echo "- **SHA-256:** \`${DMG_SHA256}\`"
+            echo "- **Draft release:** ${RELEASE_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
