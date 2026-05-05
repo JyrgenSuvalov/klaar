@@ -1,14 +1,20 @@
 # Klaar
 
-Real-time microphone processing for macOS. Klaar runs your mic through a
+Klaar ("clear" in Estonian) is a real-time microphone processing app for macOS. It runs your mic through a
 fixed chain — **noise gate → 8-band parametric EQ → de-esser → compressor
 → limiter** — and exposes the processed signal as a virtual microphone
 that any communication app (Zoom, Teams, Discord, FaceTime, Slack, Google
-Meet, …) can select as its input.
+Meet, …) can select as its input. It also adds a global mute keyboard schortcut, so you don't have to remember the various shortcuts different apps use.
 
 It ships with its own CoreAudio HAL driver and runs from the menu bar.
 
 ![Klaar interface screenshot](assets/klaar_screenshot.png)
+
+## Why
+
+I have a decent mic and audio interface, but wanted an easy way to process my microphone signal for online calls. I could purchase something like a [dbx 286s](https://dbxpro.com/en/products/286s) and that would work great. Or I could run that processing digitally. The latter is possible via e.g. running VSTs inside a DAW or OBS and using preexisting loopback solutions to route the audio to your conference app. But I wanted something simpler and lightweight.
+
+If you are using the AirPods mic or something similar, Klaar's utility would probably be minimal. If you have a somewhat decent mic you can get close to, Klaar can help provide that final polish.
 
 ## Install
 
@@ -21,6 +27,12 @@ required to finish loading the driver into `coreaudiod`.
 First launch is blocked by Gatekeeper because Klaar is ad-hoc signed —
 see [`docs/installation.md`](docs/installation.md) for the override
 steps and uninstall instructions.
+
+## Tips on "sounding good"
+
+- [Syntax episode "How to Look and Sound Good at $10, $100 and $1000 With Producer Randy"](https://syntax.fm/show/857/how-to-look-and-sound-good-at-usd10-usd100-and-usd1000-with-producer-randy)
+- ["Make Your Voice Sound Better - Vocal EQ Zones" by In The Mix on YouTube](https://youtu.be/pjMCyLsRNig?si=ocWk1LxfjifiPd9o)
+- [Dan Worrall's YouTube video on his voice over chain](https://youtu.be/LKE1atmZnE0?si=2PM1rFLmBabIUmqp)
 
 ## Build
 
