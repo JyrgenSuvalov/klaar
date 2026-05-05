@@ -23,11 +23,11 @@ const listenMock = vi.fn() as unknown as ReturnType<typeof vi.fn> & {
 // Captured focus-change subscription so tests can drive focus events.
 type FocusHandler = (e: { payload: boolean }) => void;
 let capturedFocusHandler: FocusHandler | null = null;
-const onFocusChangedMock = vi.fn(async (handler: FocusHandler) => {
+const onFocusChangedMock = vi.fn((handler: FocusHandler) => {
   capturedFocusHandler = handler;
-  return () => {
+  return Promise.resolve(() => {
     capturedFocusHandler = null;
-  };
+  });
 });
 
 vi.mock("@tauri-apps/api/core", () => ({

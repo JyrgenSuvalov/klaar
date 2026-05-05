@@ -25,7 +25,6 @@ import { a11y } from "@/i18n/a11yStrings";
  * already done the semver compare before emitting `Available`.
  */
 interface Props {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   currentVersion: string;
 }
 
