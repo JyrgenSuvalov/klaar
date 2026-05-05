@@ -8,6 +8,8 @@ Meet, …) can select as its input.
 
 It ships with its own CoreAudio HAL driver and runs from the menu bar.
 
+![Klaar interface screenshot](assets/klaar_screenshot.png)
+
 ## Install
 
 Download the latest DMG from the
