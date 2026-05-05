@@ -33,5 +33,7 @@ src-tauri/resources/Klaar.driver/
 # Debug output
 output.txt
 
-# Claude Code
+# LLM stuff
+prompts
 .claude
+openspec
