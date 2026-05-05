@@ -1,6 +1,6 @@
 [package]
 name = "klaar"
-version = "0.1.0"
+version = "0.3.0"
 description = "Configurable virtual microphone with realtime DSP for macOS"
 edition = "2021"
 
