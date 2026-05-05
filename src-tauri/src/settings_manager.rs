@@ -28,6 +28,17 @@ pub struct AppSettings {
     pub sample_rate: u32,
     #[serde(default = "default_buffer_size")]
     pub buffer_size: u32,
+    /// Migration counter for the LaunchAgent `ProgramArguments` we expect
+    /// our installed plist to carry. Compared against
+    /// `EXPECTED_LAUNCH_AGENT_ARGS_VERSION` (defined alongside the
+    /// autostart-plugin init in `lib.rs`) on startup; when it lags, we
+    /// re-register the LaunchAgent once and persist the new value.
+    ///
+    /// `0` (default for users who upgraded from a pre-migration build)
+    /// means "no marker — assume the plist needs to be rewritten if
+    /// auto-launch is currently enabled".
+    #[serde(default)]
+    pub launch_agent_args_version: u32,
 }
 
 fn default_true() -> bool { true }
@@ -44,6 +55,7 @@ impl Default for AppSettings {
             processing_enabled: true,
             sample_rate: 48000,
             buffer_size: 256,
+            launch_agent_args_version: 0,
         }
     }
 }
@@ -201,6 +213,39 @@ mod tests {
         assert!(s.auto_launch);
         assert!(s.processing_enabled); // default
         assert_eq!(s.sample_rate, 48000); // default
+    }
+
+    #[test]
+    fn launch_agent_args_version_default_is_zero_and_round_trips() {
+        // Default → 0 (the "needs migration" sentinel for pre-migration users).
+        let s = AppSettings::default();
+        assert_eq!(s.launch_agent_args_version, 0);
+
+        // Round-trip a non-zero value through serde to confirm the field is
+        // correctly named/cased on the wire and survives a save+load cycle.
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let mgr = SettingsManager::new(dir.path());
+            mgr.update(|s| s.launch_agent_args_version = 1).unwrap();
+        }
+        {
+            let mgr = SettingsManager::new(dir.path());
+            assert_eq!(mgr.get().launch_agent_args_version, 1);
+        }
+    }
+
+    #[test]
+    fn missing_launch_agent_args_version_defaults_to_zero() {
+        // A settings.json written by a pre-migration build has no
+        // `launchAgentArgsVersion` key — the field's `#[serde(default)]`
+        // SHALL produce `0` rather than failing the whole load.
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("settings.json");
+        fs::write(&file_path, r#"{"autoLaunch": true, "processingEnabled": true}"#).unwrap();
+        let mgr = SettingsManager::new(dir.path());
+        let s = mgr.get();
+        assert_eq!(s.launch_agent_args_version, 0);
+        assert!(s.auto_launch);
     }
 
     #[test]

@@ -695,11 +695,14 @@ fn toggle_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
-        } else {
-            let _ = window.show();
-            let _ = window.set_focus();
+            return;
         }
     }
+    // Either the window is hidden, or it has been destroyed by a prior
+    // recovery cycle. Either way, route through `show_main_window` so the
+    // readiness watchdog protects this surfacing too — the wedge bug we're
+    // fixing reproduces from the very first show on a cold-booted system.
+    crate::window_show::show_main_window(app);
 }
 
 /// Pure resolver for the show/hide label — exhaustively unit-testable.
@@ -836,19 +839,17 @@ fn build_menu_for_status<R: Runtime>(
     // When the kill-switch is OFF, the menu has no update items at all —
     // header is just `Klaar v<version>`, no Check item, no contextual item.
     if !update_check::ENABLED {
-        return Ok(Menu::with_items(
-            app,
-            &[
-                &header,
-                &separator_after_header,
-                &about,
-                &separator_top,
-                &mute,
-                &separator_mid,
-                &show_hide,
-                &quit,
-            ],
-        )?);
+        let items: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![
+            &header,
+            &separator_after_header,
+            &about,
+            &separator_top,
+            &mute,
+            &separator_mid,
+            &show_hide,
+            &quit,
+        ];
+        return Ok(Menu::with_items(app, &items)?);
     }
 
     let (check_label, check_enabled) = check_item_for(status, last_manual_terminal);
@@ -870,36 +871,32 @@ fn build_menu_for_status<R: Runtime>(
             true,
             None::<&str>,
         )?;
-        Ok(Menu::with_items(
-            app,
-            &[
-                &header,
-                &context_item,
-                &check_item,
-                &separator_after_header,
-                &about,
-                &separator_top,
-                &mute,
-                &separator_mid,
-                &show_hide,
-                &quit,
-            ],
-        )?)
+        let items: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![
+            &header,
+            &context_item,
+            &check_item,
+            &separator_after_header,
+            &about,
+            &separator_top,
+            &mute,
+            &separator_mid,
+            &show_hide,
+            &quit,
+        ];
+        Ok(Menu::with_items(app, &items)?)
     } else {
-        Ok(Menu::with_items(
-            app,
-            &[
-                &header,
-                &check_item,
-                &separator_after_header,
-                &about,
-                &separator_top,
-                &mute,
-                &separator_mid,
-                &show_hide,
-                &quit,
-            ],
-        )?)
+        let items: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![
+            &header,
+            &check_item,
+            &separator_after_header,
+            &about,
+            &separator_top,
+            &mute,
+            &separator_mid,
+            &show_hide,
+            &quit,
+        ];
+        Ok(Menu::with_items(app, &items)?)
     }
 }
 

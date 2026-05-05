@@ -15,6 +15,8 @@ pub mod settings_manager;
 mod tray;
 mod update_check;
 mod util;
+mod window_readiness;
+mod window_show;
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -32,9 +34,9 @@ use commands::system::{
 };
 use update_check::{check_for_app_update, get_update_status};
 use commands::{
-    delete_profile, delete_recording, get_meters, get_processing_enabled, get_settings,
-    get_spectrum, list_input_devices, list_output_devices, list_profiles, load_profile,
-    play_recording, restore_session, save_profile, set_auto_launch, set_bypass,
+    delete_profile, delete_recording, frontend_ready, get_meters, get_processing_enabled,
+    get_settings, get_spectrum, list_input_devices, list_output_devices, list_profiles,
+    load_profile, play_recording, restore_session, save_profile, set_auto_launch, set_bypass,
     set_eq_band, set_input_device, set_param,
     set_processing_enabled, start_recording, stop_engine, stop_playback,
     stop_recording, update_profile, EngineHandle,
@@ -44,7 +46,20 @@ use engine_state::AudioEngineState;
 use profile_manager::ProfileManager;
 use recording_manager::RecordingManager;
 use settings_manager::SettingsManager;
-use tray::{init_tray, refresh_tray_menu_labels};
+use tray::init_tray;
+use util::launch_mode::should_show_on_cold_launch;
+use window_readiness::WindowReadiness;
+use window_show::{attach_window_handlers, show_main_window};
+
+/// Schema version for the LaunchAgent `ProgramArguments` we expect to
+/// have written to the user's `~/Library/LaunchAgents` plist. Bump this
+/// whenever the `args:` passed to `tauri-plugin-autostart::init` change
+/// — the migration path in `setup()` will then re-register the LaunchAgent
+/// on the next launch for users with auto-launch enabled.
+///
+/// Cross-reference: see the `args: Some(vec!["--launched-at-login"])`
+/// site below in `tauri::Builder::default().plugin(...)`.
+pub const EXPECTED_LAUNCH_AGENT_ARGS_VERSION: u32 = 1;
 
 /// Stop the engine and notify the frontend if either currently selected
 /// device has disappeared from the system.
@@ -159,10 +174,31 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Persist size/position/decorations/etc., but NOT visibility.
+        // The cold-launch branch in `setup()` decides whether to show
+        // the window based on launch context (autostart vs. manual) —
+        // restoring visibility from the previous session would override
+        // that and re-surface the window after an autostart, which is
+        // exactly the white-screen bug we're fixing.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
+        // Pass `--launched-at-login` through the autostart plugin so the
+        // LaunchAgent plist's `ProgramArguments` carries an internal marker
+        // that distinguishes a login-time autostart from a Finder/`open -a`/
+        // Raycast launch. The flag is detected at runtime by
+        // `util::launch_mode::launched_at_login`. Bump
+        // `EXPECTED_LAUNCH_AGENT_ARGS_VERSION` (defined above) whenever the
+        // arg list changes — the migration path in `setup()` will re-register
+        // the agent for existing users on their next launch.
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec!["--launched-at-login"]),
         ))
         // Global mute shortcut.
         // The plugin is built without pre-registered shortcuts; the actual
@@ -200,6 +236,66 @@ pub fn run() {
             app.manage(Mutex::new(profile_mgr));
             app.manage(Mutex::new(recording_mgr));
             app.manage(settings_mgr);
+            // Tracks first-paint readiness of the main webview, scoped
+            // to a generation counter that disambiguates concurrent
+            // show cycles. Read by `show_main_window`'s watchdog and
+            // written by the `frontend_ready` IPC handler.
+            app.manage(WindowReadiness::new());
+
+            // ── LaunchAgent argument migration ──────────────────────────
+            // If the user already had auto-launch enabled under a previous
+            // build (whose plist did NOT carry `--launched-at-login`), the
+            // very next reboot would still pop the white window — the
+            // installed plist is what controls login-time invocation, not
+            // the new binary's args. Re-register the LaunchAgent once per
+            // version bump so the new args land on disk transparently.
+            //
+            // Idempotency comes from `launch_agent_args_version` — we only
+            // touch the plist when the persisted value lags the binary's
+            // expected value, then we bump it. Users with auto-launch off
+            // are skipped entirely (no plist to update).
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let settings_mgr: tauri::State<'_, SettingsManager> = app.state();
+                let current = settings_mgr.get();
+                if current.auto_launch
+                    && current.launch_agent_args_version < EXPECTED_LAUNCH_AGENT_ARGS_VERSION
+                {
+                    let autolaunch = app.handle().autolaunch();
+                    // Disable then enable: idempotent rewrite of the plist
+                    // with the binary's current args. Errors are non-fatal
+                    // — a failed migration just means the user keeps the
+                    // old (working) plist; the bug we're fixing is "white
+                    // screen on autostart", and a failed migration leaves
+                    // them with the *previous* behaviour, not a regression.
+                    let old_version = current.launch_agent_args_version;
+                    match autolaunch.disable().and_then(|_| autolaunch.enable()) {
+                        Ok(_) => {
+                            if let Err(e) = settings_mgr.update(|s| {
+                                s.launch_agent_args_version =
+                                    EXPECTED_LAUNCH_AGENT_ARGS_VERSION;
+                            }) {
+                                log::warn!(
+                                    "LaunchAgent migration: enable() succeeded but persisting version failed: {e}"
+                                );
+                            } else {
+                                log::info!(
+                                    "migrated LaunchAgent args from v{} to v{}",
+                                    old_version,
+                                    EXPECTED_LAUNCH_AGENT_ARGS_VERSION
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "LaunchAgent migration from v{} to v{} failed: {e}",
+                                old_version,
+                                EXPECTED_LAUNCH_AGENT_ARGS_VERSION
+                            );
+                        }
+                    }
+                }
+            }
 
             // Register system-wide device change listener (topology: add/remove)
             // and per-device sample-rate listener (format: nominal SR change).
@@ -375,38 +471,45 @@ pub fn run() {
                 });
             }
 
-            // Surface the main window on cold launch (Finder, `open -a`,
-            // Raycast, etc.). The window ships with `visible: false` in
-            // tauri.conf.json to avoid the unstyled flash before the webview
-            // is ready; we explicitly show + focus it here once setup is
-            // complete. Without this, `LSUIElement=true` leaves the app
-            // reachable only via the tray icon on first launch.
+            // Attach the close-intercept handler to the auto-created
+            // window (red close button + `Cmd+W` → hide instead of
+            // destroy). `attach_window_handlers` is the same routine
+            // used by the recreate path in `window_show`, so a
+            // recovered webview gets identical close-to-tray behaviour.
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
+                attach_window_handlers(app.handle(), &window);
             }
-            // Keep the tray show/hide label in sync after the cold-launch
-            // show. (`init_tray` defaults the label to "Hide" assuming this
-            // path runs, but make the invariant explicit.)
-            refresh_tray_menu_labels(app.handle());
 
-            // Intercept the red close button and `Cmd+W`: hide the window
-            // instead of letting Tauri destroy it (which would tear the app
-            // down with the only registered window). The audio engine keeps
-            // streaming while hidden; quit is reachable from the tray menu.
-            // Spec: app-shell "Red close button hides window" / "Cmd+W hides
-            // window".
-            if let Some(window) = app.get_webview_window("main") {
-                let app_handle = app.handle().clone();
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        if let Some(w) = app_handle.get_webview_window("main") {
-                            let _ = w.hide();
-                        }
-                        refresh_tray_menu_labels(&app_handle);
-                    }
-                });
+            // Cold-launch window-surfacing branch.
+            //
+            // Tauri auto-creates the `main` window (declared in
+            // `tauri.conf.json` with `visible: false`). We never
+            // destroy it during normal operation — destroy-then-rebuild
+            // of a same-label window is unreliable on Tauri/Wry/macOS
+            // (silent failure to load JS), so the lifecycle is "create
+            // once, show/hide as needed".
+            //
+            // Manual launch (Finder, `open -a`, Raycast, `tauri dev`):
+            // surface the auto-window via `show_main_window`, which
+            // arms the readiness watchdog.
+            //
+            // Login launch (`--launched-at-login`): leave the
+            // auto-window hidden. The user reaches the UI by clicking
+            // the tray icon. `show_main_window` then calls `show()` +
+            // `set_focus()` on the existing webview — JS loads on
+            // first visibility, and the frontend's focus-change
+            // handler in `main.tsx` fires `frontend_ready` for the
+            // current readiness generation.
+            if should_show_on_cold_launch(std::env::args()) {
+                show_main_window(app.handle());
+            } else {
+                log::info!(
+                    "launched at login — staying in tray (window remains hidden)"
+                );
+
+                // The Show/Hide label needs to read "Show Klaar" since
+                // we're starting hidden — `init_tray` defaults to "Hide".
+                tray::refresh_tray_menu_labels(app.handle());
             }
 
             Ok(())
@@ -463,6 +566,8 @@ pub fn run() {
             get_microphone_authorization_status,
             // Frontend error reporting (diagnostics)
             report_frontend_error,
+            // Webview readiness signal (first-paint ack from the React tree)
+            frontend_ready,
             // Global mute
             toggle_mute,
             set_mute,
@@ -482,13 +587,29 @@ pub fn run() {
             if let tauri::RunEvent::Reopen {
                 has_visible_windows: false,
                 ..
-            } = event
+            } = &event
             {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                show_main_window(app_handle);
+            }
+
+            // Prevent the default "exit on last window destroyed" behaviour.
+            //
+            // Klaar is a menu-bar app (`LSUIElement=true`), so the tray icon
+            // — not any window — is the persistent surface. The wedged-
+            // webview recovery path explicitly destroys and rebuilds the
+            // `main` window, which momentarily leaves the app with zero
+            // windows; without this guard, Tauri/Wry would tear the app
+            // down before our rebuild lands.
+            //
+            // We distinguish the two ways `ExitRequested` can fire:
+            //   - `code == None`: the runtime is exiting because the
+            //     last window closed → prevent.
+            //   - `code == Some(_)`: an explicit `app.exit(code)` (tray
+            //     Quit, recovery-failed warning click, etc.) → allow.
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                if code.is_none() {
+                    api.prevent_exit();
                 }
-                refresh_tray_menu_labels(app_handle);
             }
             // Suppress unused-variable warnings on non-macOS targets.
             #[cfg(not(target_os = "macos"))]

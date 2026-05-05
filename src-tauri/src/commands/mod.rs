@@ -30,6 +30,7 @@ use crate::dsp::spectrum::SpectrumReader;
 use crate::profile_manager::{ProfileManager, ProfileSummary, AllDspParams};
 use crate::recording_manager::RecordingManager;
 use crate::settings_manager::{SettingsManager, AppSettings};
+use crate::window_readiness::WindowReadiness;
 
 // ────────────────────────────────────────────────────────────────────────────
 // App state managed by Tauri
@@ -664,7 +665,32 @@ pub fn set_auto_launch<R: Runtime>(
 
     settings_mgr.update(|s| {
         s.auto_launch = enabled;
+        // Fresh opt-ins write the current expected args version inline so
+        // the migration path doesn't have to fire on the next launch (the
+        // plugin already wrote the new args during `enable()` above). When
+        // disabling, we still bump the marker — the next `enable()` will
+        // pick up whatever the binary's current args are anyway, and a
+        // non-zero marker here avoids a spurious migration on the next
+        // launch with auto_launch=true.
+        s.launch_agent_args_version = crate::EXPECTED_LAUNCH_AGENT_ARGS_VERSION;
     })
+}
+
+/// IPC notification fired by the frontend after the React `Root` component
+/// mounts AND on every window-focus event. Acks the current readiness
+/// generation so a stale ack from a previous show cycle (one whose
+/// generation was bumped without a remount) is replaced by a fresh ack
+/// for the live generation.
+///
+/// No payload, no return — idempotent within a generation. A second call
+/// in the same generation is a no-op.
+#[tauri::command]
+pub fn frontend_ready<R: Runtime>(
+    _app: AppHandle<R>,
+    readiness: State<'_, WindowReadiness>,
+) {
+    let live = readiness.generation();
+    readiness.mark_ready_for(live);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

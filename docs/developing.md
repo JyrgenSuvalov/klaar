@@ -243,3 +243,34 @@ All three callbacks run on a CoreAudio internal thread. `device_change_listener`
 keeps Tauri work in the callback (existing pattern); `device_format_listener`
 is stricter — its callback only does `AtomicU64::store` + `Thread::unpark`,
 deferring all logic to a worker thread.
+
+## Auto-launch and the `--launched-at-login` marker
+
+When the user enables auto-launch in Settings, `tauri-plugin-autostart`
+writes a `~/Library/LaunchAgents/eu.jyrkki.Klaar.plist` whose
+`ProgramArguments` array contains `Klaar.app/Contents/MacOS/Klaar` followed
+by `--launched-at-login`. macOS re-fires that command at every login.
+
+The flag is detected at runtime by `util::launch_mode::launched_at_login_from`
+(scanning `std::env::args()`) and gates the cold-launch
+`show_main_window()` call in `setup()`. When the flag is present we keep
+the configuration window hidden — the early-login WKWebView often comes up
+as a wedged white surface, so we let the user surface the window via the
+tray once the login session is warm. Without the flag (Finder, `open -a`,
+Raycast, `cargo tauri dev`) cold-launch behaviour is unchanged.
+
+### Local testing
+
+```bash
+cargo build --manifest-path src-tauri/Cargo.toml --release
+./src-tauri/target/release/Klaar --launched-at-login
+# → tray icon appears, no window opens.
+```
+
+### Migrating the LaunchAgent on upgrade
+
+`EXPECTED_LAUNCH_AGENT_ARGS_VERSION` (in `src-tauri/src/lib.rs`) is the
+schema marker for the args we expect to be on disk. `setup()` re-registers
+the LaunchAgent (idempotent `disable()`+`enable()`) when the persisted
+`launch_agent_args_version` lags. Bump the constant whenever the args we
+pass to `tauri_plugin_autostart::init` change.
