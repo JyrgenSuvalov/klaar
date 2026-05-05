@@ -49,6 +49,18 @@ driver is removed and `coreaudiod` is restarted.
 
 ## Updates
 
-Klaar checks GitHub once a day for new releases. When one is available, a
-dismissible banner appears in the main UI linking to the release page —
-there's no auto-installer, you just re-download the DMG.
+Klaar checks GitHub for new releases automatically — at app launch (after
+a short grace period) and again whenever your Mac wakes from sleep. A 24h
+freshness cache prevents repeat hits to the API, so the network call only
+runs when it's actually due. When a newer stable release is found, a
+dismissible banner appears in the main UI linking to the release page.
+
+You can also trigger a check on demand from the tray menu via
+**Check for Updates…**. Manual checks bypass the cache and surface their
+result — *up to date*, *update available*, or *error* — in a dialog over
+the main window so you get immediate feedback. Dismissed update banners
+stay dismissed per release tag, so a fresh tag will re-surface the banner.
+
+There's no auto-installer — to update, just download the new DMG from the
+[Releases page](https://github.com/JyrgenSuvalov/klaar/releases) and drag
+the new `Klaar.app` over the old one.
