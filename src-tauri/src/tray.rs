@@ -647,6 +647,27 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             app.exit(0);
         }
         MenuAction::CheckForUpdates => {
+            // Surface the main window first, so the `<UpdateResultDialog>`
+            // rendered by the frontend in response to `update_manual_result`
+            // has a visible window to layer over. We do this synchronously
+            // with the click rather than waiting for the network call — if
+            // the dialog mounted before the window was shown the OS
+            // compositor would skip its first frame. Tolerate missing-window
+            // errors: the manual check still fires even if surfacing fails,
+            // matching the existing About-item behaviour.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(e) = window.show() {
+                    log::warn!("tray: show main window before update check failed: {e}");
+                }
+                if let Err(e) = window.set_focus() {
+                    log::warn!("tray: focus main window before update check failed: {e}");
+                }
+                refresh_tray_menu_labels(app);
+            } else {
+                log::warn!(
+                    "tray: main window not found before update check — proceeding anyway"
+                );
+            }
             // Manual check: bypass the freshness cache (force=true). The
             // Rust pipeline emits `Checking { manual: true }` immediately,
             // which the tray rebuild reflects as the disabled "Checking…"

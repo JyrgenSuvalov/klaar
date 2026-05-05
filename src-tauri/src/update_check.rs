@@ -79,6 +79,14 @@ const MANUAL_REVERT_AFTER: Duration = Duration::from_secs(5);
 /// Tauri event channel name for state broadcasts.
 pub const UPDATE_STATUS_EVENT: &str = "update_status";
 
+/// Tauri event channel name for manual-trigger terminal results. Fired
+/// alongside `update_status` whenever a check launched with `manual: true`
+/// resolves to `UpToDate`, `Available`, or `Error`. Background-trigger
+/// terminals (T1 / T3) do NOT emit this event. The frontend uses this as a
+/// "render the result dialog now" trigger; `update_status` continues to be
+/// the canonical state stream.
+pub const UPDATE_MANUAL_RESULT_EVENT: &str = "update_manual_result";
+
 /// User-Agent for the GitHub API call. GitHub requires a non-empty UA;
 /// using the bundle identifier makes traffic identifiable in their logs.
 const USER_AGENT: &str = "klaar-app-update-check (eu.jyrkki.Klaar)";
@@ -279,6 +287,37 @@ pub async fn fetch_latest_release(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Pure transition predicates
+// ────────────────────────────────────────────────────────────────────────────
+
+/// True iff the transition `prev -> next` should toggle the tray's transient
+/// manual-terminal feedback (`Up to date` / `Couldn't reach GitHub`). Pure;
+/// covers `UpToDate` and `Error` only — `Available` has its own contextual
+/// tray sub-item, so the transient slot stays available.
+fn tray_manual_terminal_transition(prev: &UpdateStatus, next: &UpdateStatus) -> bool {
+    matches!(prev, UpdateStatus::Checking { manual: true })
+        && matches!(
+            next,
+            UpdateStatus::UpToDate { .. } | UpdateStatus::Error { .. }
+        )
+}
+
+/// True iff the transition `prev -> next` should fire the
+/// [`UPDATE_MANUAL_RESULT_EVENT`]. Pure; covers all three terminal variants
+/// (`UpToDate`, `Available`, `Error`) when the previous state is the manual
+/// `Checking { manual: true }` flavour. Background-trigger checks
+/// (`Checking { manual: false }`) NEVER fire this event.
+fn manual_result_event_transition(prev: &UpdateStatus, next: &UpdateStatus) -> bool {
+    matches!(prev, UpdateStatus::Checking { manual: true })
+        && matches!(
+            next,
+            UpdateStatus::UpToDate { .. }
+                | UpdateStatus::Available { .. }
+                | UpdateStatus::Error { .. }
+        )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Handle (Tauri-managed state)
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -461,13 +500,25 @@ impl UpdateCheckHandle {
     /// Persist `new` into the state, bump the token, emit on the event bus,
     /// and ask the tray to rebuild on the main thread.
     async fn set_status<R: Runtime>(&self, app: &AppHandle<R>, new: UpdateStatus) {
-        // Track whether this terminal was reached via a manual check, so the
-        // tray rebuild can show the transient "Up to date" / "Couldn't reach
-        // GitHub" disabled feedback. Cleared by any non-terminal transition.
-        let was_manual_terminal = {
+        // Two related-but-distinct manual-terminal flags:
+        //
+        //   - `tray_manual_terminal`: drives the tray's transient
+        //     "Up to date" / "Couldn't reach GitHub" disabled feedback. Only
+        //     covers `UpToDate` / `Error`; `Available` is intentionally
+        //     excluded (the tray's contextual "Update available: vX.Y.Z →"
+        //     sub-item already surfaces it).
+        //
+        //   - `manual_result_event`: drives the frontend's `<UpdateResultDialog>`.
+        //     Covers all three terminals (`UpToDate` / `Available` / `Error`)
+        //     when transitioning out of `Checking { manual: true }`. Background
+        //     terminals (T1 / T3) are silent — only the existing banner +
+        //     tray sub-item surface them.
+        let (tray_manual_terminal, manual_result_event) = {
             let guard = self.inner.state.read().await;
-            matches!(*guard, UpdateStatus::Checking { manual: true })
-                && matches!(new, UpdateStatus::UpToDate { .. } | UpdateStatus::Error { .. })
+            (
+                tray_manual_terminal_transition(&guard, &new),
+                manual_result_event_transition(&guard, &new),
+            )
         };
         {
             let mut guard = self.inner.state.write().await;
@@ -475,9 +526,12 @@ impl UpdateCheckHandle {
         }
         self.inner
             .last_manual_terminal
-            .store(was_manual_terminal, Ordering::Release);
+            .store(tray_manual_terminal, Ordering::Release);
         self.inner.state_token.fetch_add(1, Ordering::AcqRel);
         let _ = app.emit(UPDATE_STATUS_EVENT, &new);
+        if manual_result_event {
+            let _ = app.emit(UPDATE_MANUAL_RESULT_EVENT, &new);
+        }
         let app_clone = app.clone();
         let new_clone = new.clone();
         let _ = app.run_on_main_thread(move || {
@@ -1069,6 +1123,126 @@ mod tests {
         let force = false;
         let should_skip_network = !force && cache_is_fresh(&cache);
         assert!(!should_skip_network, "stale cache must trigger network");
+    }
+
+    // ────────── Manual-terminal transition predicates ──────────
+    //
+    // These cover Tasks 1.3 / 1.4 of the manual-update-result-dialog change.
+    // The state machine in `set_status` calls `manual_result_event_transition`
+    // to decide whether to emit `update_manual_result`, and
+    // `tray_manual_terminal_transition` to decide whether to set the tray
+    // transient-feedback flag. Both are pure; we exhaustively test the
+    // transition matrix here rather than spinning up a Tauri MockRuntime.
+
+    fn fixture_now() -> String {
+        "2026-05-05T00:00:00Z".to_string()
+    }
+
+    fn t_up_to_date() -> UpdateStatus {
+        UpdateStatus::UpToDate {
+            checked_at: fixture_now(),
+        }
+    }
+    fn t_available() -> UpdateStatus {
+        UpdateStatus::Available {
+            tag: "v1.4.0".into(),
+            url: "https://example/v1.4.0".into(),
+            checked_at: fixture_now(),
+        }
+    }
+    fn t_error() -> UpdateStatus {
+        UpdateStatus::Error {
+            error: ErrorKind::Network,
+            checked_at: fixture_now(),
+        }
+    }
+
+    #[test]
+    fn manual_result_event_fires_on_each_manual_terminal() {
+        // Manual UpToDate → emit.
+        assert!(manual_result_event_transition(
+            &UpdateStatus::Checking { manual: true },
+            &t_up_to_date(),
+        ));
+        // Manual Available → emit.
+        assert!(manual_result_event_transition(
+            &UpdateStatus::Checking { manual: true },
+            &t_available(),
+        ));
+        // Manual Error → emit.
+        assert!(manual_result_event_transition(
+            &UpdateStatus::Checking { manual: true },
+            &t_error(),
+        ));
+    }
+
+    #[test]
+    fn manual_result_event_silent_for_background_terminals() {
+        // Background (manual: false) terminals MUST NOT emit, regardless of
+        // which terminal we land in.
+        assert!(!manual_result_event_transition(
+            &UpdateStatus::Checking { manual: false },
+            &t_up_to_date(),
+        ));
+        assert!(!manual_result_event_transition(
+            &UpdateStatus::Checking { manual: false },
+            &t_available(),
+        ));
+        assert!(!manual_result_event_transition(
+            &UpdateStatus::Checking { manual: false },
+            &t_error(),
+        ));
+    }
+
+    #[test]
+    fn manual_result_event_silent_when_prev_is_not_checking() {
+        // The freshness short-circuit path (`emit_from_cache`) writes a
+        // terminal directly without going through `Checking`. That is by
+        // definition a background trigger and MUST NOT emit.
+        assert!(!manual_result_event_transition(
+            &UpdateStatus::Idle,
+            &t_up_to_date(),
+        ));
+        assert!(!manual_result_event_transition(
+            &UpdateStatus::Idle,
+            &t_available(),
+        ));
+        // Manual revert (Available -> Idle, etc.) must not fire either.
+        assert!(!manual_result_event_transition(
+            &t_up_to_date(),
+            &UpdateStatus::Idle,
+        ));
+    }
+
+    #[test]
+    fn tray_manual_terminal_excludes_available() {
+        // The tray's transient-feedback slot does NOT cover Available — that
+        // state is surfaced via the contextual sub-item instead.
+        assert!(!tray_manual_terminal_transition(
+            &UpdateStatus::Checking { manual: true },
+            &t_available(),
+        ));
+        // But it does cover the other two manual terminals.
+        assert!(tray_manual_terminal_transition(
+            &UpdateStatus::Checking { manual: true },
+            &t_up_to_date(),
+        ));
+        assert!(tray_manual_terminal_transition(
+            &UpdateStatus::Checking { manual: true },
+            &t_error(),
+        ));
+    }
+
+    #[test]
+    fn tray_manual_terminal_silent_for_background() {
+        assert!(!tray_manual_terminal_transition(
+            &UpdateStatus::Checking { manual: false },
+            &t_up_to_date(),
+        ));
+        assert!(!tray_manual_terminal_transition(
+            &UpdateStatus::Checking { manual: false },
+            &t_error(),
+        ));
     }
 
     // ────────── HTTP fetch path (mockito) ──────────

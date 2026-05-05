@@ -10,8 +10,20 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
 import { EnumerationGate } from "./components/onboarding";
 import { AboutDialog } from "./components/AboutDialog";
+import { UpdateResultDialog } from "./components/onboarding/UpdateResultDialog";
 import { useAboutStore } from "./state/aboutStore";
+import {
+  UPDATE_CHECK_ENABLED,
+  type UpdateStatus,
+} from "./lib/updateCheck";
+import {
+  useUpdateResultDialogStore,
+  type UpdateManualResultPayload,
+} from "./state/updateResultDialogStore";
 import "./index.css";
+
+/** Mirrors `update_check::UPDATE_MANUAL_RESULT_EVENT` on the Rust side. */
+const UPDATE_MANUAL_RESULT_EVENT = "update_manual_result";
 
 /**
  * Tree-root mount: the `<EnumerationGate>` decides between the onboarding
@@ -34,6 +46,44 @@ function Root() {
       unlisten?.();
     };
   }, [openAbout]);
+
+  // Manual-update-check result dialog: subscribe to `update_manual_result`
+  // (sibling of the existing `update_status` channel — see
+  // `src-tauri/src/update_check.rs`). Only manual triggers (T5) emit on this
+  // channel; background terminals (T1 / T3) stay silent. The store's
+  // `show()` swaps the payload in place when a new event arrives, satisfying
+  // the rapid-click coalescing rule.
+  useEffect(() => {
+    if (!UPDATE_CHECK_ENABLED) return;
+    let cancelled = false;
+    let unlisten: UnlistenFn | null = null;
+    void listen<UpdateStatus>(UPDATE_MANUAL_RESULT_EVENT, (event) => {
+      // Defensive narrowing — Rust only emits terminal variants, but the
+      // shared `UpdateStatus` type covers `Idle` / `Checking` too. Drop
+      // anything that isn't a terminal so the dialog never mounts on a
+      // non-terminal payload.
+      const payload = event.payload;
+      if (
+        payload.kind === "up_to_date" ||
+        payload.kind === "available" ||
+        payload.kind === "error"
+      ) {
+        useUpdateResultDialogStore
+          .getState()
+          .show(payload as UpdateManualResultPayload);
+      }
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   // Notify the backend that the React tree mounted AND that JS is alive
   // on every subsequent show cycle. This is the proof-of-life signal that
@@ -89,6 +139,7 @@ function Root() {
         <App />
       </EnumerationGate>
       <AboutDialog />
+      <UpdateResultDialog />
     </>
   );
 }
