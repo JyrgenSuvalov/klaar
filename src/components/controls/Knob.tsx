@@ -262,9 +262,17 @@ export function Knob({
     };
   }, [applyDelta]);
 
+  // Fixed column width so knobs align identically across panels regardless
+  // of label or value-text length. The SVG centers in this column; label and
+  // value spans below also center, with overflow-visible so longer strings
+  // (e.g. "1000 ms", "-1 dBFS") don't push the column wider and shift the
+  // knob's horizontal position relative to neighbours in other panels.
+  const columnWidth = Math.max(size, 64);
+
   return (
     <div
-      className="flex flex-col items-center gap-1 select-none"
+      className="flex flex-col items-center gap-1 select-none shrink-0"
+      style={{ width: columnWidth }}
     >
       <svg
         ref={svgRef}
