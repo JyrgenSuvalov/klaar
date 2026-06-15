@@ -14,14 +14,24 @@ For day-to-day development, `pnpm dev:app` chains the three steps:
 ```bash
 pnpm dev:app
 # expands to:
-#   cargo build --release --manifest-path driver/Cargo.toml
+#   bash scripts/build-driver.sh   # cargo build + assembles the .driver bundle
 #   bash scripts/stage-driver.sh   # ad-hoc signs + copies into resources/
 #   pnpm tauri dev
 ```
 
+`scripts/build-driver.sh` is the mandatory first step — a plain
+`cargo build` only emits `libKlaar.dylib`; it never assembles the
+`Klaar.driver` bundle that `stage-driver.sh` and the Tauri resource glob
+(`resources/Klaar.driver/**/*`) require. On a fresh clone, skipping it
+makes `stage-driver.sh` and the Tauri build fail on the missing bundle;
+on a repeat run it silently stages a **stale** bundle (cargo refreshes
+the dylib but leaves the copy inside `Contents/MacOS/` untouched). See
+the build-pipeline note below for why cargo alone is insufficient.
+
 Run the steps individually if you want to iterate on just one — e.g.
-re-stage without rebuilding (`pnpm stage-driver`), or skip the driver
-rebuild entirely when working on frontend code (`pnpm tauri dev`).
+rebuild + reassemble the bundle (`pnpm build-driver`), re-stage without
+rebuilding (`pnpm stage-driver`), or skip the driver rebuild entirely
+when working on frontend code (`pnpm tauri dev`).
 
 `stage-driver.sh` ad-hoc signs the bundle as a mandatory step. macOS refuses
 to load unsigned HAL plug-ins on modern releases, so skipping signing means

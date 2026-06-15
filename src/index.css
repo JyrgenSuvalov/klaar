@@ -108,6 +108,19 @@
   --color-band-8: #4ade80;
 }
 
+/* ── Document background ───────────────────────────────────────────────────
+   The visible app background is painted by the `h-screen` root div and the
+   main scroll container (both via `--color-background`). The document chrome
+   itself (html/body/#root) is left unstyled by Tailwind's preflight, so a
+   vigorous scroll that rubber-bands the WKWebView past the root div exposed
+   the bare document — which defaults to white. Painting it with the same
+   background means the overscroll region reveals dark, not white. */
+html,
+body,
+#root {
+  background-color: var(--color-background);
+}
+
 /* ── Content wrapper ──────────────────────────────────────────────────── */
 /* Constrains the inner content of the header, main, and footer to a
    comfortable maximum width while letting backgrounds, borders, and
