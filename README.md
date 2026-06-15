@@ -16,6 +16,10 @@ I have a decent mic and audio interface, but wanted an easy way to process my mi
 
 If you are using the AirPods mic or something similar, Klaar's utility would probably be minimal. If you have a somewhat decent mic you can get close to, Klaar can help provide that final polish.
 
+## LLM Disclaimer
+
+Heavy use of Claude Code with Opus models assisted the development of this product.
+
 ## Install
 
 Download the latest DMG from the
