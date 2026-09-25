@@ -149,7 +149,7 @@ export const useDspStore = create<DspStore>((set, get) => ({
 
     // Optimistic update
     set((state) => ({
-      [effect]: { ...state[effect as keyof DspState], [param]: value },
+      [effect]: { ...state[effect], [param]: value },
     }));
 
     try {
@@ -158,7 +158,7 @@ export const useDspStore = create<DspStore>((set, get) => ({
       // Revert on error
       console.error(`set_param(${effect}, ${param}) failed:`, err);
       set((state) => ({
-        [effect]: { ...state[effect as keyof DspState], [param]: prev },
+        [effect]: { ...state[effect], [param]: prev },
       }));
     }
   },
@@ -168,7 +168,7 @@ export const useDspStore = create<DspStore>((set, get) => ({
     const prev = (get()[effect] as unknown as Record<string, unknown>)["bypassed"];
 
     set((state) => ({
-      [effect]: { ...state[effect as keyof DspState], bypassed },
+      [effect]: { ...state[effect], bypassed },
     }));
 
     try {
@@ -176,7 +176,7 @@ export const useDspStore = create<DspStore>((set, get) => ({
     } catch (err) {
       console.error(`set_bypass(${effect}) failed:`, err);
       set((state) => ({
-        [effect]: { ...state[effect as keyof DspState], bypassed: prev },
+        [effect]: { ...state[effect], bypassed: prev },
       }));
     }
   },

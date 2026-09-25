@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { combinedMagnitudeResponse, logSpacedFreqs } from "@/lib/eqMath";
 import type { EqBand } from "@/store/dspStore";
 import { a11y } from "@/i18n/a11yStrings";
+import { BAND_COLORS } from "@/components/eq/bandColors";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -12,18 +13,6 @@ const DB_MAX = 24;
 const DB_MIN = -24;
 const CURVE_POINTS = 512;
 const SAMPLE_RATE = 48000;
-
-// One colour per band (8 bands)
-const BAND_COLORS = [
-  "#60a5fa", // blue-400
-  "#34d399", // emerald-400
-  "#fbbf24", // amber-400
-  "#f87171", // red-400
-  "#a78bfa", // violet-400
-  "#fb923c", // orange-400
-  "#38bdf8", // sky-400
-  "#4ade80", // green-400
-];
 
 // ── CSS-var → canvas colour bridge ────────────────────────────────────────
 //
@@ -637,6 +626,3 @@ export function EqCurveDisplay({
     />
   );
 }
-
-// Export colours for use in EqBandControls
-export { BAND_COLORS };

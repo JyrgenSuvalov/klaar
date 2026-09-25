@@ -1,6 +1,6 @@
 import { Power } from "lucide-react";
 import { Knob } from "@/components/controls/Knob";
-import { BAND_COLORS } from "@/components/eq/EqCurveDisplay";
+import { BAND_COLORS } from "@/components/eq/bandColors";
 import { FilterTypeIcon } from "@/components/eq/FilterTypeIcon";
 import {
   Select,

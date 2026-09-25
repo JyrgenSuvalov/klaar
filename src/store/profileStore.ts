@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import { useDspStore, type DspState, type EqBand, type FilterType } from "./dspStore";
+import { useDspStore, type DspState } from "./dspStore";
 import { useEngineStore, type EngineError } from "./engineStore";
 
 /**
@@ -138,11 +138,11 @@ function allParamsToDspState(params: AllDspParams): DspState {
       bands: params.eq.bands.map((b) => ({
         enabled: b.enabled,
         // "unknown" is the serde catch-all for unrecognised filter types; map to bell.
-        filterType: (b.filterType === "unknown" ? "bell" : b.filterType) as FilterType,
+        filterType: b.filterType === "unknown" ? "bell" : b.filterType,
         frequency: b.frequency,
         gain: b.gain,
         q: b.q,
-      })) as EqBand[],
+      })),
       bypassed: params.eq.bypassed,
     },
     deEsser: {
