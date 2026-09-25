@@ -13,7 +13,7 @@ name = "Klaar"
 coreaudio-sys = { version = "0.2", default-features = false, features = ["audio_server_plugin", "core_audio"] }
 core-foundation-sys = "0.8"
 core-foundation = "0.10"
-mach2 = "0.4"
+mach2 = "0.7"
 
 [features]
 # Enables `driver_log!` / `driver_log_property!` macros → synchronous writes
