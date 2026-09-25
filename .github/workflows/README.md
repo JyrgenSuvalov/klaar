@@ -29,7 +29,7 @@ This directory contains the release automation for Klaar.
 - **Runner:** `macos-14` (Apple Silicon).
 - **What it does:**
   1. Verifies `package.json.version` matches the tag.
-  2. Sets up Node 20 / pnpm and Rust stable with both Darwin targets.
+  2. Sets up Node 24 / pnpm and Rust stable with both Darwin targets.
   3. Runs gates: `pnpm typecheck`, `pnpm lint`, `pnpm test`,
      `cargo test --workspace` (per workspace).
   4. Runs `pnpm build:release:universal`.

@@ -16,10 +16,7 @@ import {
   UPDATE_CHECK_ENABLED,
   type UpdateStatus,
 } from "./lib/updateCheck";
-import {
-  useUpdateResultDialogStore,
-  type UpdateManualResultPayload,
-} from "./state/updateResultDialogStore";
+import { useUpdateResultDialogStore } from "./state/updateResultDialogStore";
 import "./index.css";
 
 /** Mirrors `update_check::UPDATE_MANUAL_RESULT_EVENT` on the Rust side. */
@@ -70,7 +67,7 @@ function Root() {
       ) {
         useUpdateResultDialogStore
           .getState()
-          .show(payload as UpdateManualResultPayload);
+          .show(payload);
       }
     }).then((fn) => {
       if (cancelled) {

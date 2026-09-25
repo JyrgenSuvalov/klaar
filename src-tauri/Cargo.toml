@@ -38,9 +38,9 @@ plist = "1.6"
 thiserror = "2"
 tokio = { version = "1", features = ["time", "macros", "sync"] }
 # HTTP client for the GitHub release update check (Rust-owned per the
-# `app-update-check` capability). `rustls-tls` keeps openssl off the
+# `app-update-check` capability). `rustls` keeps openssl off the
 # bundle; no `native-tls`. `json` enables `Response::json()`.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 # Strict semver comparison for `<current_version> vs <release_tag>`. Mirrors
 # the Rust `util/semver.rs` shape but adds prerelease/build-metadata
 # handling we need for hand-typed tags.

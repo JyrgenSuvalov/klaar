@@ -45,10 +45,7 @@ export function DriverInstallDialog({ onSuccess, onFailure }: Props) {
   const [progressBucket, setProgressBucket] = useState(0);
 
   useEffect(() => {
-    if (!installing) {
-      setProgressBucket(0);
-      return;
-    }
+    if (!installing) return;
     // Schedule one timeout per non-zero threshold; clear on resolve/reject.
     const timeouts = PROGRESS_BUCKETS.slice(1).map((bucket, idx) =>
       window.setTimeout(() => setProgressBucket(idx + 1), bucket.thresholdMs),
@@ -60,6 +57,7 @@ export function DriverInstallDialog({ onSuccess, onFailure }: Props) {
 
   const handleInstall = async () => {
     if (installing) return;
+    setProgressBucket(0);
     setInstalling(true);
     try {
       await invoke("install_driver");

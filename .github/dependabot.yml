@@ -1,0 +1,60 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Give fresh releases a few days to surface regressions or a compromised
+    # publish before a PR is opened.
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # typescript-eslint caps its peer range at the TypeScript versions it
+      # supports; drop this once it accepts the next major.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # The JS API/plugins must stay in step with the Rust `tauri*` crates.
+      tauri:
+        patterns:
+          - "@tauri-apps/*"
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "cargo"
+    directories:
+      - "/src-tauri"
+      - "/driver"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      tauri:
+        patterns:
+          - "tauri"
+          - "tauri-*"
+      cargo-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
