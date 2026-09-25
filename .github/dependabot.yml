@@ -12,6 +12,11 @@ updates:
       semver-major-days: 14
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # typescript-eslint caps its peer range at the TypeScript versions it
+      # supports; drop this once it accepts the next major.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       # The JS API/plugins must stay in step with the Rust `tauri*` crates.
       tauri:
