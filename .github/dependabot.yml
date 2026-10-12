@@ -17,6 +17,9 @@ updates:
       # supports; drop this once it accepts the next major.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # Keep the Node types on the major we actually run (see release.yml).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # The JS API/plugins must stay in step with the Rust `tauri*` crates.
       tauri:
