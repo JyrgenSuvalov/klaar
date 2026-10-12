@@ -26,6 +26,10 @@ updates:
         patterns:
           - "@tauri-apps/*"
       npm-minor-patch:
+        # Needed so the `tauri` group above wins: Dependabot treats a group with
+        # no patterns as more specific than any wildcard pattern.
+        patterns:
+          - "*"
         update-types:
           - "minor"
           - "patch"
@@ -47,6 +51,10 @@ updates:
           - "tauri"
           - "tauri-*"
       cargo-minor-patch:
+        # Needed so the `tauri` group above wins: Dependabot treats a group with
+        # no patterns as more specific than any wildcard pattern.
+        patterns:
+          - "*"
         update-types:
           - "minor"
           - "patch"
